@@ -57,62 +57,111 @@ namespace PokemonScalping
         {
             Console.WriteLine();
             Console.WriteLine($"--------- NOUVEAU CRAWL POUR PICWIKTOYS ({DateTime.Now}) ---------");
-            InitItemsForPicwiktoys();
-            InitStockForPicwiktoys();
+            var actual = InitItemsForPicwiktoys().ToList();
+            Synchro(actual);
             Console.WriteLine();
         }
 
-        private static void InitStockForPicwiktoys()
+        private static void Synchro(List<Item> actual)
         {
-            foreach (var item in picWikItems)
+            for (var i = picWikItems.Count - 1; i > 0; i--)
             {
-                var httpWebRequest = (HttpWebRequest)WebRequest.Create("https://api.picwictoys.com/api/product_stock");
-                httpWebRequest.ContentType = "application/json";
-                httpWebRequest.Method = "POST";
+                var actualItem = actual.FirstOrDefault(a => a.Id == picWikItems[i].Id);
 
-                using (var streamWriter = new StreamWriter(httpWebRequest.GetRequestStream()))
+                if (actualItem == null)
                 {
-                    JObject json = new JObject
-                    {
-                        ["ref_product"] = $"{item.Id}"
-                    };
-
-                    streamWriter.Write(json);
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine($"Suppression d'item chez picwiktoys ! {picWikItems[i].Name}, sku : {picWikItems[i].Id}");
+                    picWikItems.RemoveAt(i);
                 }
-
-                var httpResponse = (HttpWebResponse)httpWebRequest.GetResponse();
-                using (var streamReader = new StreamReader(httpResponse.GetResponseStream()))
+                else
                 {
-                    var result = streamReader.ReadToEnd();
-                    JObject converted = JObject.Parse(result);
-                    var allStock = converted["allStock"];
-                    foreach(JProperty stock in allStock)
+                    for (var j = picWikItems[i].Stocks.Count - 1; j > 0; j--)
                     {
-                        var storeId = stock.Name.ToString();
-                        if (!picWikStores.Contains(storeId)) continue;
-                        var storeQty = (int)stock.Value;
+                        var actualStock = actualItem.Stocks.FirstOrDefault(s => s.StoreId == picWikItems[i].Stocks[j].StoreId);
 
-                        var store = item.Stocks.FirstOrDefault(stock => stock.StoreId == storeId);
-
-                        if (store != null)
+                        if (actualStock == null)
                         {
-                            if(store.ItemNumber != storeQty)
-                            {
-                                Console.WriteLine($"Changement de stock pour l'article {item.Name} pour le magasin picwiktoys {picWikStoresMapping[storeId]} : ancien - {store.ItemNumber}, nouveau - {storeQty}");
-                                store.ItemNumber = storeQty;
-                            }
+                            Console.ForegroundColor = ConsoleColor.Red;
+                            Console.WriteLine($"Changement de stock pour l'article {picWikItems[i].Name} pour le magasin picwiktoys {picWikStoresMapping[picWikItems[i].Stocks[j].StoreId]} : ancien - {picWikItems[i].Stocks[j].ItemNumber}, nouveau - 0");
+                            picWikItems[i].Stocks.RemoveAt(j);
                         }
-                        else
+                    }
+                }
+            }
+
+            foreach (var element in actual)
+            {
+                var picWikElement = picWikItems.FirstOrDefault(pwi => pwi.Id == element.Id);
+
+                if (picWikElement == null)
+                {
+                    Console.ForegroundColor = ConsoleColor.Green;
+                    Console.WriteLine($"Nouvel item chez picwiktoys ! {element.Name}, sku : {element.Id}");
+                    foreach(var st in element.Stocks)
+                    {
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.WriteLine($"Ajout de stock pour l'article {element.Name} pour le magasin picwiktoys {st.StoreId} : {st.ItemNumber} items.");
+                    }
+                    picWikItems.Add(new Item(element.Name, element.Id, element.Stocks));
+                }
+                else
+                {
+                    foreach(var st in element.Stocks)
+                    {
+                        var existingStock = picWikElement.Stocks.FirstOrDefault(s => s.StoreId == st.StoreId);
+
+                        if (existingStock == null)
                         {
-                            Console.WriteLine($"Ajout de stock pour l'article {item.Name} pour le magasin picwiktoys {picWikStoresMapping[storeId]} : {storeQty} items.");
-                            item.Stocks.Add(new Stock(storeId, storeQty));
+                            Console.ForegroundColor = ConsoleColor.Green;
+                            Console.WriteLine($"Ajout de stock pour l'article {element.Name} pour le magasin picwiktoys {st.StoreId} : {st.ItemNumber} items.");
+                            picWikElement.Stocks.Add(new Stock(st.StoreId, st.ItemNumber));
+                        } 
+                        else if (existingStock.ItemNumber != st.ItemNumber)
+                        {
+                            Console.ForegroundColor = existingStock.ItemNumber < st.ItemNumber ? ConsoleColor.Green : ConsoleColor.Yellow;
+                            Console.WriteLine($"Changement de stock pour l'article {element.Name} pour le magasin picwiktoys {st.StoreId} : ancien - {existingStock.ItemNumber}, nouveau - {st.ItemNumber}");
+                            existingStock.ItemNumber = st.ItemNumber;
                         }
                     }
                 }
             }
         }
 
-        private static void InitItemsForPicwiktoys()
+        private static IEnumerable<Stock> InitStockForPicwiktoys(string sku)
+        {
+            var httpWebRequest = (HttpWebRequest)WebRequest.Create("https://api.picwictoys.com/api/product_stock");
+            httpWebRequest.ContentType = "application/json";
+            httpWebRequest.Method = "POST";
+
+            using (var streamWriter = new StreamWriter(httpWebRequest.GetRequestStream()))
+            {
+                JObject json = new JObject
+                {
+                    ["ref_product"] = $"{sku}"
+                };
+
+                streamWriter.Write(json);
+            }
+
+            var httpResponse = (HttpWebResponse)httpWebRequest.GetResponse();
+            using (var streamReader = new StreamReader(httpResponse.GetResponseStream()))
+            {
+                var result = streamReader.ReadToEnd();
+                JObject converted = JObject.Parse(result);
+                var allStock = converted["allStock"];
+                foreach(JProperty stock in allStock)
+                {
+                    var storeId = stock.Name.ToString();
+                    if (!picWikStores.Contains(storeId)) continue;
+                    var storeQty = (int)stock.Value;
+
+                    yield return new Stock(storeId, storeQty);
+                }
+            }
+        }
+
+        private static IEnumerable<Item> InitItemsForPicwiktoys()
         {
             int i = 1;
 
@@ -170,11 +219,9 @@ namespace PokemonScalping
                         var sku = item["sku"].ToString();
                         var name = item["attributeInfo"].First(ai => ai["attributeName"].ToString() == "LIBWEB")["vals"].First()["value"].ToString();
 
-                        if (!picWikItems.Any(item => item.Id == sku))
-                        {
-                            Console.WriteLine($"Nouvel item chez picwiktoys ! {name}, sku : {sku}");
-                            picWikItems.Add(new Item(name, sku, new List<Stock>()));
-                        }
+                        var stocks = InitStockForPicwiktoys(sku);
+
+                        yield return new Item(name, sku, stocks.ToList());
                     }
                 }
                 i++;
