@@ -104,7 +104,7 @@ namespace PokemonScalping
                 {
                     Console.ForegroundColor = ConsoleColor.Red;
                     Console.WriteLine($"Suppression d'item chez kingjouet ! {kingJouetItems[i].Name}, id : {kingJouetItems[i].Id}");
-                    picWikItems.RemoveAt(i);
+                    kingJouetItems.RemoveAt(i);
                 }
                 else
                 {
