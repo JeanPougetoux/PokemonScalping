@@ -130,15 +130,38 @@ namespace PokemonScalping
                 {
                     Console.ForegroundColor = ConsoleColor.Green;
                     Console.WriteLine($"Nouvel item chez kingjouet ! {element.Name}, id : {element.Id}");
+
                     foreach (var st in element.Stocks)
                     {
                         Console.ForegroundColor = ConsoleColor.Green;
                         Console.WriteLine($"Ajout de stock pour l'article {element.Name} pour le magasin kingjouet {kingJouetStoresMapping[st.StoreId]}.");
                     }
-                    kingJouetItems.Add(new Item(element.Name, element.Id, element.Stocks));
+
+                    if (element.AvalaibleWeb)
+                    {
+                        Console.WriteLine($"Ajout de stock web pour l'article {element.Name} pour kingjouet.");
+                    }
+
+                    kingJouetItems.Add(new Item(element.Name, element.Id, element.Stocks, element.AvalaibleWeb));
                 }
                 else
                 {
+                    if(kingJouetElement.AvalaibleWeb != element.AvalaibleWeb)
+                    {
+                        if(kingJouetElement.AvalaibleWeb)
+                        {
+                            Console.ForegroundColor = ConsoleColor.Red;
+                            Console.WriteLine($"Plus de stock web pour l'article {element.Name} pour kingjouet.");
+                        }
+                        else
+                        {
+                            Console.ForegroundColor = ConsoleColor.Green;
+                            Console.WriteLine($"Ajout de stock web pour l'article {element.Name} pour kingjouet.");
+                        }
+
+                        kingJouetElement.AvalaibleWeb = element.AvalaibleWeb;
+                    }
+
                     foreach (var st in element.Stocks)
                     {
                         var existingStock = kingJouetElement.Stocks.FirstOrDefault(s => s.StoreId == st.StoreId);
@@ -189,13 +212,14 @@ namespace PokemonScalping
                 {
                     var guid = article["guid"];
                     var name = article["libelle"];
+                    var web = (bool)article["estDispoWeb"];
                     var mag = article["etatMag"]
                         .Select(em => em.ToString().Split("_")[0])
                         .Distinct()
                         .Where(em => kingJouetStores.Contains(em))
                         .ToList();
 
-                    yield return new Item(name.ToString(), guid.ToString(), mag.Select(m => new Stock(m, 1)).ToList());
+                    yield return new Item(name.ToString(), guid.ToString(), mag.Select(m => new Stock(m, 1)).ToList(), web);
                 }
             }
         }
@@ -236,16 +260,39 @@ namespace PokemonScalping
                 {
                     Console.ForegroundColor = ConsoleColor.Green;
                     Console.WriteLine($"Nouvel item chez picwiktoys ! {element.Name}, sku : {element.Id}");
+
                     foreach(var st in element.Stocks)
                     {
                         Console.ForegroundColor = ConsoleColor.Green;
                         Console.WriteLine($"Ajout de stock pour l'article {element.Name} pour le magasin picwiktoys {picWikStoresMapping[st.StoreId]} : {st.ItemNumber} items.");
                     }
-                    picWikItems.Add(new Item(element.Name, element.Id, element.Stocks));
+
+                    if(element.AvalaibleWeb)
+                    {
+                        Console.WriteLine($"Ajout de stock web pour l'article {element.Name} pour picwiktoys.");
+                    }
+
+                    picWikItems.Add(new Item(element.Name, element.Id, element.Stocks, element.AvalaibleWeb));
                 }
                 else
                 {
-                    foreach(var st in element.Stocks)
+                    if (picWikElement.AvalaibleWeb != element.AvalaibleWeb)
+                    {
+                        if (picWikElement.AvalaibleWeb)
+                        {
+                            Console.ForegroundColor = ConsoleColor.Red;
+                            Console.WriteLine($"Plus de stock web pour l'article {element.Name} pour picwiktoys.");
+                        }
+                        else
+                        {
+                            Console.ForegroundColor = ConsoleColor.Green;
+                            Console.WriteLine($"Ajout de stock web pour l'article {element.Name} pour picwiktoys.");
+                        }
+
+                        picWikElement.AvalaibleWeb = element.AvalaibleWeb;
+                    }
+
+                    foreach (var st in element.Stocks)
                     {
                         var existingStock = picWikElement.Stocks.FirstOrDefault(s => s.StoreId == st.StoreId);
 
@@ -266,11 +313,13 @@ namespace PokemonScalping
             }
         }
 
-        private static IEnumerable<Stock> InitStockForPicwiktoys(string sku)
+        private static (IEnumerable<Stock>, bool) InitStockForPicwiktoys(string sku)
         {
             var httpWebRequest = (HttpWebRequest)WebRequest.Create("https://api.picwictoys.com/api/product_stock");
             httpWebRequest.ContentType = "application/json";
             httpWebRequest.Method = "POST";
+
+            var stocks = new List<Stock>();
 
             using (var streamWriter = new StreamWriter(httpWebRequest.GetRequestStream()))
             {
@@ -288,14 +337,17 @@ namespace PokemonScalping
                 var result = streamReader.ReadToEnd();
                 JObject converted = JObject.Parse(result);
                 var allStock = converted["allStock"];
+                var web = (int)converted["web"]["stock"] > 0;
                 foreach(JProperty stock in allStock)
                 {
                     var storeId = stock.Name.ToString();
                     if (!picWikStores.Contains(storeId)) continue;
                     var storeQty = (int)stock.Value;
 
-                    yield return new Stock(storeId, storeQty);
+                    stocks.Add(new Stock(storeId, storeQty));
                 }
+
+                return (stocks, web);
             }
         }
 
@@ -359,7 +411,7 @@ namespace PokemonScalping
 
                         var stocks = InitStockForPicwiktoys(sku);
 
-                        yield return new Item(name, sku, stocks.ToList());
+                        yield return new Item(name, sku, stocks.Item1.ToList(), stocks.Item2);
                     }
                 }
                 i++;
